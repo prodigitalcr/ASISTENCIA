@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>SISTEMA CARPIO V42 - CLOUD JUNTA</title>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <style>
+        :root { --primary: #1a5c8a; --accent: #27ae60; --danger: #c0392b; --dark: #2c3e50; --bg: #f4f7f6; --info: #0d6efd; --warning: #f39c12; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); margin: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        .navbar { background: var(--dark); color: white; padding: 12px 25px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 10px rgba(0,0,0,0.2); }
+        
+        #scan-view, #parent-view { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow-y: auto; padding: 20px; }
+        .scanner-card { background: white; padding: 30px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); width: 100%; max-width: 450px; text-align: center; border-bottom: 6px solid var(--primary); }
+        .input-scan { width: 100%; padding: 12px; font-size: 1.5rem; border: 2px solid #ddd; border-radius: 10px; text-align: center; outline: none; margin-top: 15px; box-sizing: border-box; }
+        
+        #master-panel { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: white; z-index: 1000; padding: 25px; box-sizing: border-box; overflow-y: auto; }
+        .tabs-container { margin-bottom: 20px; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+        .tab-btn { padding: 10px 25px; cursor: pointer; border: none; background: #e0e0e0; border-radius: 5px; font-weight: bold; margin-right: 10px; }
+        .tab-btn.active { background: var(--primary); color: white; }
+        
+        .power-bar { background: #f8f9fa; padding: 15px; border-radius: 12px; display: flex; gap: 10px; align-items: center; margin-bottom: 15px; border: 1px solid #ddd; flex-wrap: wrap; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; background: white; }
+        th, td { border: 1px solid #eee; padding: 10px; text-align: left; vertical-align: middle; font-size: 0.9rem; }
+        th { background: #f1f1f1; position: sticky; top: 0; }
+        
+        .btn { padding: 8px 12px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; color: white; transition: 0.2s; display: inline-flex; align-items: center; gap: 5px; text-decoration: none; font-size: 0.8rem; }
+        .btn-m { background: var(--primary); } .btn-s { background: var(--accent); } .btn-d { background: var(--danger); } .btn-i { background: var(--info); } .btn-w { background: var(--warning); }
+        
+        .editable-input { width: 100%; border: 1px transparent; background: transparent; padding: 5px; box-sizing: border-box; }
+        .editable-input:hover { border: 1px solid #ccc; background: #fff; }
+
+        .history-list { text-align: left; max-height: 350px; overflow-y: auto; border: 1px solid #eee; border-radius: 8px; margin-top: 10px; }
+        .history-item { padding: 12px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+        .badge-entrada { background: #d4edda; color: #155724; padding: 3px 8px; border-radius: 4px; font-weight: bold; }
+        .badge-salida { background: #f8d7da; color: #721c24; padding: 3px 8px; border-radius: 4px; font-weight: bold; }
+
+        @media print { .no-print { display: none !important; } #master-panel { display: block !important; position: relative; } }
+    </style>
+</head>
+<body>
+
+    <div class="navbar no-print">
+        <div><strong>ESCUELA LA CARPIO</strong> | Junta de Educación</div>
+        <div style="display: flex; gap: 10px;">
+            <button class="btn btn-w" onclick="mostrarVista('parent-view')">👨‍👩‍👧 PADRES</button>
+            <button class="btn btn-i" onclick="mostrarVista('scan-view')">📷 ESCÁNER</button>
+            <button class="btn btn-m" onclick="pedirClave()">🔓 PANEL MASTER</button>
+        </div>
+    </div>
+
+    <div id="scan-view" class="no-print">
+        <div class="scanner-card">
+            <h2>Acceso Estudiantil</h2>
+            <p>Registro automático sincronizado con la nube</p>
+            <input type="text" id="lector" class="input-scan" placeholder="Escanee carné..." autofocus autocomplete="off">
+            <div id="resBox" style="margin-top:20px; display:none; padding:20px; border-radius:12px;">
+                <h2 id="resNombre" style="margin:0;"></h2>
+                <h3 id="resMov" style="margin:5px 0;"></h3>
+            </div>
+        </div>
+    </div>
+
+    <div id="parent-view" class="no-print" style="display:none;">
+        <div class="scanner-card" style="max-width: 500px;">
+            <h2 style="color: var(--primary);">Consulta para Padres</h2>
+            <p>Historial completo (Datos en tiempo real)</p>
+            <input type="text" id="parentInput" class="input-scan" placeholder="ID / Cédula">
+            <button class="btn btn-m" style="width:100%; margin-top:15px; padding:15px;" onclick="consultarHistorialPadre()">VER REGISTROS NUBE</button>
+            <div id="parentResult" style="margin-top:20px; display:none;">
+                <h3 id="parentStudentName" style="margin-bottom:5px;"></h3>
+                <div id="parentLogList" class="history-list"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="master-panel">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+            <h1 style="color:var(--primary); margin:0;">Control Maestro Cloud</h1>
+            <div style="display:flex; gap:10px; align-items:center;">
+                <div style="background: #eef; padding: 10px; border-radius: 8px; border: 1px solid #ccd;">
+                    <small>Prefijo:</small>
+                    <input type="text" id="waPrefix" value="506" style="width: 45px; font-weight: bold;">
+                </div>
+                <button class="btn btn-d no-print" onclick="cerrarMaster()">❌ SALIR</button>
+            </div>
+        </div>
+
+        <div class="tabs-container no-print">
+            <button id="tab1" class="tab-btn active" onclick="cambiarTab(1)">👥 MIEMBROS</button>
+            <button id="tab2" class="tab-btn" onclick="cambiarTab(2)">📊 HISTORIAL GENERAL</button>
+        </div>
+
+        <div id="sec-alumnos">
+            <div class="power-bar no-print">
+                <button class="btn btn-i" onclick="agregarMiembroManual()">➕ NUEVO</button>
+                <button class="btn btn-m" onclick="guardarTodoEnNube()">💾 SINCRONIZAR NUBE</button>
+                <button class="btn btn-i" onclick="imprimirTodosLosCarnets()">📇 CARNÉS MASIVOS</button>
+                <button class="btn btn-s" onclick="descargarBaseDatosCSV()">📥 EXPORTAR CSV</button>
+                <input type="file" id="csvFile" accept=".csv" style="font-size: 0.7rem; width: 140px;">
+                <button class="btn btn-m" onclick="importarCSV()">📥 IMPORTAR CSV</button>
+                <button class="btn btn-d" onclick="borrarTodoLocalYNube()">🧨 RESET TOTAL</button>
+            </div>
+            
+            <input type="text" id="busqueda" placeholder="🔍 Buscar miembro..." onkeyup="filtrarMiembros()" style="width:100%; padding:10px; margin-bottom:10px; border-radius:8px; border:1px solid #ddd;">
+
+            <table>
+                <thead>
+                    <tr><th style="width:70px;">QR</th><th>ID</th><th>Nombre</th><th>Puesto</th><th>WhatsApp</th><th class="no-print">Acciones</th></tr>
+                </thead>
+                <tbody id="tablaAlumnos"></tbody>
+            </table>
+        </div>
+
+        <div id="sec-reporte" style="display:none;">
+            <div class="power-bar no-print">
+                <button class="btn btn-d" onclick="limpiarLogNube()">🧹 VACIAR HISTORIAL NUBE</button>
+            </div>
+            <table>
+                <thead><tr><th>Fecha / Hora</th><th>ID</th><th>Nombre</th><th>Tipo</th></tr></thead>
+                <tbody id="tablaLog"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        // CONFIGURACIÓN FIREBASE CON TU URL
+        const firebaseConfig = {
+            databaseURL: "https://escuela-la-carpio-default-rtdb.firebaseio.com/"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+
+        let db = JSON.parse(localStorage.getItem('DB_CARPIO_V42')) || { personas: {}, log: [] };
+        let passAdmin = localStorage.getItem('PASS_CARPIO_SISTEMA') || "CARPIO2026";
+        let marcasHoy = {}; 
+        let procesando = false;
+
+        function mostrarVista(vistaId) {
+            document.getElementById('scan-view').style.display = 'none';
+            document.getElementById('parent-view').style.display = 'none';
+            document.getElementById(vistaId).style.display = 'flex';
+            if(vistaId === 'scan-view') document.getElementById('lector').focus();
+        }
+
+        // --- REGISTRO DE ASISTENCIA ---
+        document.getElementById('lector').addEventListener('keydown', (e) => {
+            if(e.key === 'Enter') {
+                const id = e.target.value.trim();
+                if(id !== "" && !procesando) enviarAsistencia(id);
+                e.target.value = '';
+            }
+        });
+
+        function enviarAsistencia(id) {
+            const p = db.personas[id];
+            if(p) {
+                procesando = true;
+                let tipo = !marcasHoy[id] ? "ENTRADA" : "SALIDA";
+                !marcasHoy[id] ? marcasHoy[id] = true : delete marcasHoy[id];
+                
+                const ahora = new Date();
+                const fechaHora = ahora.toLocaleString();
+                
+                const registro = { id: id, hora: fechaHora, nombre: p.nombre, tipo: tipo };
+                
+                // Guardar Local
+                db.log.unshift(registro);
+                localStorage.setItem('DB_CARPIO_V42', JSON.stringify(db));
+                
+                // Guardar en Firebase (NUBE)
+                database.ref('logs').push(registro);
+
+                const res = document.getElementById('resBox');
+                res.style.display = 'block';
+                res.style.background = tipo === "ENTRADA" ? "#d4edda" : "#f8d7da";
+                document.getElementById('resNombre').innerText = p.nombre;
+                document.getElementById('resMov').innerText = "✅ " + tipo + " (Sincronizado)";
+                
+                setTimeout(() => { res.style.display = 'none'; procesando = false; }, 2000);
+            } else {
+                alert("Identificación no registrada.");
+            }
+        }
+
+        // --- CONSULTA PADRES (DESDE FIREBASE) ---
+        function consultarHistorialPadre() {
+            const id = document.getElementById('parentInput').value.trim();
+            const logList = document.getElementById('parentLogList');
+            if(!db.personas[id]) { alert("ID no registrado en sistema."); return; }
+            
+            document.getElementById('parentStudentName').innerText = db.personas[id].nombre;
+            logList.innerHTML = "Cargando registros de la nube...";
+            
+            database.ref('logs').orderByChild('id').equalTo(id).once('value').then((snapshot) => {
+                logList.innerHTML = "";
+                if(snapshot.exists()) {
+                    let logsArray = [];
+                    snapshot.forEach((child) => { logsArray.unshift(child.val()); });
+                    logsArray.forEach(l => {
+                        const badge = l.tipo === "ENTRADA" ? "badge-entrada" : "badge-salida";
+                        logList.innerHTML += `<div class='history-item'><span>${l.hora}</span><span class="${badge}">${l.tipo}</span></div>`;
+                    });
+                } else {
+                    logList.innerHTML = "<div class='history-item'>No hay registros en la nube.</div>";
+                }
+                document.getElementById('parentResult').style.display = 'block';
+            });
+        }
+
+        // --- PANEL MASTER ---
+        function pedirClave() {
+            if(prompt("Contraseña Master:") === passAdmin) abrirMaster();
+            else alert("Acceso denegado.");
+        }
+
+        function abrirMaster() { 
+            document.getElementById('master-panel').style.display = 'block'; 
+            renderAlumnos(); 
+            escucharLogsNube(); 
+        }
+
+        function escucharLogsNube() {
+            database.ref('logs').limitToLast(50).on('value', (snapshot) => {
+                const t = document.getElementById('tablaLog'); t.innerHTML = "";
+                let logs = [];
+                snapshot.forEach(c => logs.unshift(c.val()));
+                logs.forEach(i => t.insertAdjacentHTML('beforeend', `<tr><td>${i.hora}</td><td>${i.id}</td><td>${i.nombre}</td><td>${i.tipo}</td></tr>`));
+            });
+        }
+
+        function renderAlumnos() {
+            const t = document.getElementById('tablaAlumnos'); t.innerHTML = "";
+            Object.entries(db.personas).forEach(([id, info]) => {
+                const qrId = `qr-${id.replace(/\W/g,'')}`;
+                t.insertAdjacentHTML('beforeend', `<tr>
+                    <td><div id="${qrId}"></div></td>
+                    <td>${id}</td>
+                    <td><input class="editable-input" value="${info.nombre}" onchange="db.personas['${id}'].nombre=this.value"></td>
+                    <td><input class="editable-input" value="${info.puesto||''}" onchange="db.personas['${id}'].puesto=this.value"></td>
+                    <td><input class="editable-input" value="${info.telefono||''}" onchange="db.personas['${id}'].telefono=this.value"></td>
+                    <td class="no-print" style="display:flex; gap:5px;">
+                        <button class="btn btn-s" onclick="enviarMensajeWA('${id}')">💬</button>
+                        <button class="btn btn-i" onclick="descargarCarnet('${id}')">📇</button>
+                        <button class="btn btn-d" onclick="if(confirm('¿Borrar?')) { delete db.personas['${id}']; renderAlumnos(); }">🗑️</button>
+                    </td>
+                </tr>`);
+                new QRCode(document.getElementById(qrId), { text: id, width: 50, height: 50 });
+            });
+        }
+
+        function guardarTodoEnNube() {
+            localStorage.setItem('DB_CARPIO_V42', JSON.stringify(db));
+            database.ref('personas').set(db.personas);
+            alert("Sincronización con Nube Exitosa.");
+        }
+
+        function enviarMensajeWA(id) {
+            const p = db.personas[id];
+            const prefix = document.getElementById('waPrefix').value.trim();
+            const msg = prompt("Mensaje para " + p.nombre + ":");
+            if(msg) window.open(`https://web.whatsapp.com/send?phone=${prefix}${p.telefono.replace(/\D/g,'')}&text=${encodeURIComponent(msg)}`, '_blank');
+        }
+
+        function limpiarLogNube() { if(confirm("¿Vaciar historial de la NUBE?")) database.ref('logs').remove(); }
+        function borrarTodoLocalYNube() { if(confirm("¡Peligro! Se borrará TODO.")) { db={personas:{}, log:[]}; guardarTodoEnNube(); renderAlumnos(); } }
+        
+        function descargarBaseDatosCSV() {
+            let csv = "\uFEFFID,Nombre,Puesto,Telefono\n";
+            Object.entries(db.personas).forEach(([id, p]) => csv += `"${id}","${p.nombre}","${p.puesto}","${p.telefono}"\n`);
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = "BASE_CARPIO.csv"; a.click();
+        }
+
+        function importarCSV() {
+            const f = document.getElementById('csvFile').files[0];
+            if(!f) return;
+            const r = new FileReader();
+            r.onload = (e) => {
+                e.target.result.split('\n').forEach((l, i) => {
+                    if(i === 0 || !l.trim()) return;
+                    const c = l.split(',');
+                    if(c[0]) db.personas[c[0].replace(/"/g,'').trim()] = { 
+                        nombre: c[1]?.replace(/"/g,'').trim(), 
+                        puesto: c[2]?.replace(/"/g,'').trim(), 
+                        telefono: c[3]?.replace(/"/g,'').trim() 
+                    };
+                });
+                renderAlumnos(); alert("Importado. No olvide Guardar en Nube.");
+            };
+            r.readAsText(f);
+        }
+
+        function descargarCarnet(id) {
+            const p = db.personas[id];
+            const win = window.open('', '_blank', 'width=350,height=450');
+            win.document.write(`<html><head><script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"><\/script><\/head>
+                <body style="display:flex;justify-content:center;align-items:center;height:100vh;margin:0;">
+                <div style="width:250px; border:3px solid #1a5c8a; text-align:center; font-family:sans-serif; border-radius:15px; padding:15px;">
+                    <h3 style="margin:0;color:#1a5c8a;">LA CARPIO</h3>
+                    <div id="q" style="display:flex;justify-content:center;margin:15px 0;"></div>
+                    <b>${p.nombre}</b><br><small>${p.puesto||''}</small>
+                </div>
+                <script>new QRCode(document.getElementById("q"), {text:"${id}", width:130, height:130}); setTimeout(()=>window.print(),800);<\/script></body></html>`);
+            win.document.close();
+        }
+
+        function imprimirTodosLosCarnets() {
+            const win = window.open('', '_blank');
+            win.document.write(`<html><head><script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"><\/script><style>body{display:flex;flex-wrap:wrap;gap:10px;}</style></head><body>`);
+            Object.entries(db.personas).forEach(([id, p]) => {
+                win.document.write(`<div style="width:180px; border:1px solid #000; padding:10px; text-align:center; font-family:sans-serif; page-break-inside:avoid;">
+                    <div id="qr-${id.replace(/\W/g,'')}" style="display:flex;justify-content:center;"></div>
+                    <small>${p.nombre}</small>
+                </div>`);
+            });
+            win.document.write(`<script>${Object.keys(db.personas).map(id => `new QRCode(document.getElementById("qr-${id.replace(/\W/g,'')}"), {text:\"${id}\", width:80, height:80});`).join('\n')} setTimeout(()=>window.print(),1200);<\\/script></body></html>`);
+            win.document.close();
+        }
+
+        function filtrarMiembros() {
+            const q = document.getElementById('busqueda').value.toLowerCase();
+            const filas = document.getElementById('tablaAlumnos').getElementsByTagName('tr');
+            for (let f of filas) f.style.display = f.innerText.toLowerCase().includes(q) ? "" : "none";
+        }
+
+        function agregarMiembroManual() {
+            const id = prompt("ID/Cédula:"); if(!id) return;
+            db.personas[id] = { nombre: prompt("Nombre:"), puesto: prompt("Puesto:"), telefono: prompt("WhatsApp:") };
+            renderAlumnos();
+        }
+
+        function cambiarTab(n) {
+            document.getElementById('sec-alumnos').style.display = (n === 1) ? 'block' : 'none';
+            document.getElementById('sec-reporte').style.display = (n === 2) ? 'block' : 'none';
+            document.getElementById('tab1').className = (n === 1) ? 'tab-btn active' : 'tab-btn';
+            document.getElementById('tab2').className = (n === 2) ? 'tab-btn active' : 'tab-btn';
+        }
+
+        function cerrarMaster() { document.getElementById('master-panel').style.display = 'none'; }
+        window.onload = () => document.getElementById('lector').focus();
+    </script>
+</body>
+</html>
